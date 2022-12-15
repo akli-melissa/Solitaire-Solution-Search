@@ -15,12 +15,12 @@ let reduce n limit =
   Int.(of_float (to_float n /. to_float randmax *. to_float limit))
 
 
-(** DESCRIPTION DE L'ALGORITHME DE GENERATION DES PERMUTATIONS
+(* DESCRIPTION DE L'ALGORITHME DE GENERATION DES PERMUTATIONS
 
 a) Créer tout d'abord les 55 premières paires suivantes:
-  * premières composantes : 0 pour la premiere paire,
+  . premières composantes : 0 pour la premiere paire,
     puis ajouter 21 modulo 55 à chaque fois
-  * secondes composantes : graine, puis 1, puis les "différences"
+  . secondes composantes : graine, puis 1, puis les "différences"
     successives entre les deux dernières secondes composantes.
     Par "différence" entre a et b on entend
       - Ou bien (a-b) si b<=a
@@ -117,6 +117,39 @@ let shuffle_test = function
       45;5;3;41;15;12;31;17;28;8;29;30;37]
   | _ -> failwith "shuffle : unsupported number (TODO)"
 
+(*Chaque étape de l'algo décrit ci-dessus a sa propre fonction *)  
+let deuxieme_composante n seed =
+   let rec deuxieme_composante_aux n a b = match n with
+      | 0 -> a
+      | 1 -> b
+      | _ -> if(a>=b) then deuxieme_composante_aux (n-1) (b) (a-b) 
+            else deuxieme_composante_aux (n) (b) (a-b+randmax)
+   in deuxieme_composante_aux n seed 1
 
+let paire n seed = ( (n*21) mod 55, deuxieme_composante n seed )
+
+let liste_paires seed =
+   List.init 55 (fun x -> paire (x) (seed)) 
+
+let n_premiers liste n = 
+   let rec n_premiers_aux liste n res = 
+      match liste with
+      | [] -> List.rev res
+      | x::l -> match n with
+               | 0 -> List.rev res
+               | _ -> n_premiers_aux (l) (n-1) (x::res)
+   in n_premiers_aux liste n []
+
+let n_derniers liste n = List.rev (n_premiers (List.rev liste) (n))
+
+let m_tirages f1 f2 m = 
+   let rec m_tirages_aux f1 f2 m res = match m with
+      | 0 -> (f1, f2, res)
+      | _ -> match ((Fifo.pop f1),(Fifo.pop f2)) with
+         | ((x1,y1),(x2,y2)) -> if (x1 >= x2) then m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2) y2) (m-1) ((x1-x2) :: res)
+                                else m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2+randmax) y2) (m-1) ((x1-x2+randmax) :: res)
+   in m_tirages_aux f1 f2 m []  
+      
 let shuffle n =
+
   shuffle_test n (* TODO: changer en une implementation complete *)
