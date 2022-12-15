@@ -50,12 +50,6 @@ let set_game_seed name =
 
 (* Fonctions auxiliaires ajoutées *)
 
-let initialisation_colonnes etat permutation = 
-  match etat.game with 
-    | Freecell -> ()(*partion_liste_freecell (etat.colonnes) (permutation)*)
-    | Seahaven -> ()
-    | Midnight -> ()
-    | Baker    -> ()
 
 
 let setEtat game = match game with
@@ -64,42 +58,76 @@ let setEtat game = match game with
   | Baker    -> etat.colonnes <- FArray.make 13 []
   | Freecell -> ()
 
-let partion_liste_freecell permutation  = 
-  let rec partion_liste_freecell_aux perm res acc cpt ss = (*ss: six ou sept*)
+
+let partition_liste_freecell permutation  = 
+  let rec partition_liste_freecell_aux perm res acc cpt ss = (*ss: six ou sept*)
     match perm with
     | [] -> acc::res
     | x::perm' -> 
       if (ss = 7) then 
-        if cpt<7 then partion_liste_freecell_aux (perm') (res) (x::acc) (cpt+1) (ss)
-        else partion_liste_freecell_aux (perm') (acc::res) (x::[]) (1) (6)
+        if cpt<7 then partition_liste_freecell_aux (perm') (res) ((Card.of_num x)::acc) (cpt+1) (ss)
+        else partition_liste_freecell_aux (perm') (acc::res) ((Card.of_num x)::[]) (1) (6)
       else (* ss = 6 *)
-        if cpt<6 then partion_liste_freecell_aux (perm') (res) (x::acc) (cpt+1) (ss)
-        else partion_liste_freecell_aux (perm') (acc::res) (x::[]) (1) (7)
+        if cpt<6 then partition_liste_freecell_aux (perm') (res) ((Card.of_num x)::acc) (cpt+1) (ss)
+        else partition_liste_freecell_aux (perm') (acc::res) ((Card.of_num x)::[]) (1) (7)
 
-  in partion_liste_freecell_aux (permutation) ([]) ([]) (0) (7)
+  in partition_liste_freecell_aux (permutation) ([]) ([]) (0) (7)
 
 let partition_liste_seahaven permutation = 
   let rec partition_liste_seahaven_aux perm res acc cpt =
     match perm with
     | []   -> acc::res
-    | [c1;c2]  ->  partition_liste_seahaven_aux ([]) (res) (acc) (cpt)
-    | x::perm' -> if (cpt < 5) then partition_liste_seahaven_aux (perm') (res) (x::acc) (cpt+1)
-      else partition_liste_seahaven_aux (x::perm') (acc::res) ([]) (0)
+    | [c1;c2]  -> begin
+      etat.registres <- FArray.set (etat.registres) (0) (Some (Card.of_num(c1)));
+      etat.registres <- FArray.set (etat.registres) (1) (Some (Card.of_num(c2)));
+      partition_liste_seahaven_aux ([]) (res) (acc) (cpt)
+    end
+    | x::perm' -> if (cpt < 5) then partition_liste_seahaven_aux (perm') (res) ((Card.of_num x)::acc) (cpt+1)
+      else partition_liste_seahaven_aux ( x::perm') (acc::res) ([]) (0)
   in partition_liste_seahaven_aux (permutation) ([]) ([]) (0)
 
 
-  let rec affiche_colonnes ll = 
-  match ll with
-   | [] -> ()
-   | x::l -> 
-    begin 
-      List.iter (fun n -> Printf.printf "%s " (Card.to_string (Card.of_num n))) x; 
-      print_newline ();
-      affiche_colonnes l
-    end
 
-let partion_liste_midnight = ()
-let partion_liste_baker = ()
+let partition_liste_midnight permutation = 
+  let rec partition_liste_midnight_aux perm res acc cpt = 
+    match perm with
+    | [] -> acc::res
+    | x::perm' -> if(cpt < 3) then partition_liste_midnight_aux (perm') (res) ((Card.of_num x)::acc) (cpt+1)
+                  else partition_liste_midnight_aux (x::perm') (acc::res) ([]) (0)
+
+  in partition_liste_midnight_aux (permutation) ([]) ([]) (0)
+
+
+let partition_liste_baker permutation = 
+  let rec partition_liste_baker_aux perm res acc cpt = 
+    match perm with
+    | [] -> acc::res
+    | x::perm' -> match (Card.of_num x) with 
+                  | (13,_) -> if(cpt < 4) then partition_liste_baker_aux (perm') (res) (acc@((Card.of_num x)::[])) (cpt+1) 
+                              else partition_liste_baker_aux (x::perm') (acc::res) ([]) (0)
+                  | ( _,_) -> if(cpt < 4) then partition_liste_baker_aux (perm') (res) ((Card.of_num x)::acc) (cpt+1) 
+                              else partition_liste_baker_aux (x::perm') (acc::res) ([]) (0)
+  in partition_liste_baker_aux permutation [] [] 0
+
+
+let initialisation_colonnes permutation_partitionee = 
+  let rec initialisation_colonnes_aux partitions ind = 
+    match partitions with
+    | [] -> ()
+    | x::part -> begin
+                    etat.colonnes <- FArray.set (etat.colonnes) (ind) (x);
+                    initialisation_colonnes_aux part (ind+1) 
+    end
+  in initialisation_colonnes_aux permutation_partitionee (0)
+              
+
+let partition_des_cartes permutation= 
+    match config.game with 
+    | Seahaven -> partition_liste_seahaven permutation
+    | Freecell -> partition_liste_freecell permutation
+    | Midnight -> partition_liste_midnight permutation
+    | Baker    -> partition_liste_baker    permutation
+
 
 (* TODO : La fonction suivante est à adapter et continuer *)
 
@@ -116,7 +144,8 @@ let treat_game conf =
 
   setEtat conf.game;
   print_newline ();
-  let res = partition_liste_seahaven (permut) in affiche_colonnes res;
+  let res = partition_liste_freecell (permut) in
+  initialisation_colonnes res;
   exit 0
 
 let main () =
