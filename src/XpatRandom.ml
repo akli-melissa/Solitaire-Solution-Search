@@ -143,13 +143,27 @@ let n_premiers liste n =
 let n_derniers liste n = List.rev (n_premiers (List.rev liste) (n))
 
 let m_tirages f1 f2 m = 
-   let rec m_tirages_aux f1 f2 m res = match m with
+   let rec m_tirages_aux f1 f2 m res =
+      match m with
       | 0 -> (f1, f2, res)
       | _ -> match ((Fifo.pop f1),(Fifo.pop f2)) with
          | ((x1,y1),(x2,y2)) -> if (x1 >= x2) then m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2) y2) (m-1) ((x1-x2) :: res)
                                 else m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2+randmax) y2) (m-1) ((x1-x2+randmax) :: res)
    in m_tirages_aux f1 f2 m []  
-      
-let shuffle n =
 
-  shuffle_test n (* TODO: changer en une implementation complete *)
+let trie_paire (x1,y1) (x2,y2) = match compare (x1) (x2) with
+   | 0 -> compare (y1) (y2)
+   | n -> n 
+
+let creer_permutation tirages = 
+   let rec creer_permutation_aux tirages ind res = 
+      match tirages with
+      | [] -> res
+      | x::l -> creer_permutation_aux l (List.filteri (fun z y -> x <> y) ind ) ((List.nth ind x)::res)
+   in creer_permutation_aux tirages (List.init 52 (fun x -> x)) []
+let shuffle n = shuffle_test n
+(**   let liste_paires_triees = List.sort (trie_paire) (liste_paires n) in
+   let liste = match List.split liste_paires_triees with 
+   | (_, y) -> y in   *)
+
+  (*shuffle_test n  TODO: changer en une implementation complete *)

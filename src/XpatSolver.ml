@@ -24,8 +24,6 @@ let etat = {
   depots    = FArray.make 4 0
 }
 
-type deplacement = Carte of int | T | V
-
 
 let getgame = function
   | "FreeCell"|"fc" -> Freecell
@@ -48,17 +46,20 @@ let set_game_seed name =
                       "FreeCell Seahaven MidnightOil BakersDozen")
 
 (* Fonctions auxiliaires ajoutées *)
+exception Deplacement_impossible;;
+type deplacement = Carte of int | T | V
 
-(* Initialisation de l'état selon la configuration choisie *)
+
 let setEtat game = match game with
-  | Seahaven -> etat.colonnes <- FArray.make 10 []
+  | Seahaven -> begin 
+                  etat.colonnes <- FArray.make 10 [];
+                  etat.registres <- FArray.make 4 None;
+                end
   | Midnight -> etat.colonnes <- FArray.make 18 []
   | Baker    -> etat.colonnes <- FArray.make 13 []
   | Freecell -> ()
 
 
-
-(* Distribution des cartes suivant chaque configuration  *)
 let partition_liste_freecell permutation  = 
   let rec partition_liste_freecell_aux perm res acc cpt ss = (*ss: six ou sept*)
     match perm with
@@ -109,13 +110,6 @@ let partition_liste_baker permutation =
                   else partition_liste_baker_aux (x::perm') (acc::res) ([]) (0)
   in partition_liste_baker_aux permutation [] [] 0
 
-let partition_des_cartes permutation = 
-match config.game with 
-| Seahaven -> partition_liste_seahaven permutation
-| Freecell -> partition_liste_freecell permutation
-| Midnight -> partition_liste_midnight permutation
-| Baker    -> partition_liste_baker    permutation
-
 
 let initialisation_colonnes permutation_partitionee = 
   let rec initialisation_colonnes_aux partitions ind = 
@@ -128,6 +122,12 @@ let initialisation_colonnes permutation_partitionee =
   in initialisation_colonnes_aux permutation_partitionee (0)
               
 
+let partition_des_cartes permutation= 
+    match config.game with 
+    | Seahaven -> partition_liste_seahaven permutation
+    | Freecell -> partition_liste_freecell permutation
+    | Midnight -> partition_liste_midnight permutation
+    | Baker    -> partition_liste_baker    permutation
 
 let rec mise_au_depot colonne pos = match colonne with
   | [] -> ()
@@ -138,11 +138,10 @@ let rec mise_au_depot colonne pos = match colonne with
         begin
           etat.depots <- FArray.set (etat.depots) (Card.num_of_suit s) (r+1);
           etat.colonnes <- FArray.set (etat.colonnes) (pos) (sub_l);
-          mise_au_depot sub_l pos; (* Faire tant qu'une normalisation est possible*)
+          mise_au_depot sub_l pos;
         end
       end
 
-(* Normalisation *)
 let normalisation()  = 
   let rec normalisation_aux pos = 
     match FArray.get (etat.colonnes) (pos) with
@@ -152,6 +151,176 @@ let normalisation()  =
         normalisation_aux (pos+1);
     end
   in normalisation_aux 0
+
+  (*Source: Accessible, Destination: Vide *)
+
+let depose_carte_colonne carte pos_colonne =   match (FArray.get etat.colonnes pos_colonne) with 
+    | col -> FArray.set (etat.colonnes) (pos_colonne) (carte::(FArray.get etat.colonnes pos_colonne))
+
+let retire_carte_colonne pos_colonne = match (FArray.get etat.colonnes pos_colonne) with
+  | [] -> failwith ("Aucune carte à retirer pour cette colonne!")
+  | carte::col ->  FArray.set (etat.colonnes) (pos_colonne) (col)
+
+let depose_carte_registre carte = 
+  let rec depose_carte_registre_aux pos carte res posee = match (FArray.get etat.registres pos) with
+  | exception Not_found -> FArray.of_list res (*A revoir *)
+  | None -> if(posee = false) then depose_carte_registre_aux (pos+1) (carte) (carte::res) (true) else depose_carte_registre_aux (pos+1) (carte) (None::res) (posee)
+  | x -> depose_carte_registre_aux  (pos+1) carte (x::res)  (posee)
+  in depose_carte_registre_aux (0) (carte) ([]) (false) (*Renvoie le res à l'envers mais pas trop grave*)
+
+let retire_carte_registre carte = 
+  let rec retire_carte_registre_aux  res (pos) = match (FArray.get etat.registres (pos)) with
+  | exception Not_found -> FArray.of_list res (* A Revoir !!! *)
+  | None ->  retire_carte_registre_aux (None::res) (pos+1)
+  | Some(x) -> if(x = carte) then (retire_carte_registre_aux (None::res) (pos+1) ) else (retire_carte_registre_aux (Some(x)::res) (pos+1))
+  in retire_carte_registre_aux [] 0
+
+let existe_colonne_vide  = 
+  let rec existe_colonne_vide_aux pos = match (FArray.get etat.colonnes pos) with
+    | exception Not_found -> failwith ("Pas de colonne libre")
+    | [] -> pos
+    | _::_ -> existe_colonne_vide_aux (pos+1)
+  in existe_colonne_vide_aux (0)
+
+let existe_registre_vide = 
+  let rec existe_registre_vide_aux pos = match (FArray.get etat.registres pos) with
+    | exception Not_found -> failwith ("Pas de registre vide")
+    | None -> true
+    | _ -> existe_registre_vide_aux (pos+1)
+  in existe_registre_vide_aux (0)
+
+  let pos_source_colonne src = 
+  let rec pos_source_aux source pos =
+    match FArray.get (etat.colonnes) (pos) with
+    | exception Not_found  -> failwith ("Position non accessible de la carte source")
+    | [] -> pos_source_aux source (pos+1)
+    | x::col -> if (Card.to_num x =  src) then pos else pos_source_aux (source) (pos+1)
+  in (pos_source_aux (src) (0)) 
+
+let pos_source_reg src =
+  let rec pos_source_reg_aux source pos = match (FArray.get etat.registres pos) with
+  | exception Not_found  -> failwith ("Position source invalide: Col")
+  | Some(x) -> if (Card.to_num x =  source) then pos else pos_source_reg_aux (source) (pos+1)
+  | _ -> pos_source_reg_aux (source) (pos+1)
+in pos_source_reg_aux (src) (0)
+
+let pos_destination dest = 
+  let rec pos_destination_aux dest pos = match FArray.get (etat.colonnes) (pos) with
+    | exception Not_found -> failwith ("Position destination incorrecte: Reg")
+    | [] -> pos_destination_aux dest (pos+1)
+    | x::col -> if (Card.to_num x =  dest) then pos else pos_destination_aux dest (pos+1)
+  in pos_destination_aux (dest) (0)
+
+
+let rec source_valide_aux_colonne source pos = match FArray.get (etat.colonnes) (pos) with
+  | exception Not_found -> false
+  | [] -> false
+  | x::col -> if(Card.to_num x =source) then true
+  else source_valide_aux_colonne source (pos+1)
+
+let rec source_valide_aux_registre source pos = match FArray.get (etat.registres) (pos) with
+  | exception Not_found -> false
+  | Some(x) -> if (source = Card.to_num x) then true else source_valide_aux_registre source (pos+1)
+  | _ -> source_valide_aux_registre source (pos+1)
+
+let source_valide source = (source_valide_aux_colonne source 0) || (source_valide_aux_registre source 0)
+
+
+let  destination_colonne_valide destination =
+  let rec destination_valide_aux destination (pos) = match FArray.get (etat.colonnes) (pos) with
+    | exception Not_found -> false
+    | [] -> false
+    | x::col -> if(Card.to_num x =destination) then true
+    else destination_valide_aux destination (pos+1)
+  in destination_valide_aux destination 0
+
+let destination_valide dest = 
+  let rec destination_valide_aux dest (pos) = match FArray.get (etat.registres) (pos) with
+    | exception Not_found -> false
+    | None -> true
+    | _ -> destination_valide_aux dest (pos+1)
+  in destination_valide_aux dest (0)
+
+let est_rouge c = match Card.of_num c with
+  | (r,s) -> if(s = Coeur || s = Carreau) then true else false
+let est_noire c = match Card.of_num c  with
+| (r,s) -> if(s = Trefle || s = Pique) then true else false
+  
+let couleur_diff c1 c2 = (est_rouge c1 && est_noire c2) || 
+                          (est_noire c1 && est_rouge c2)
+let get_rank c = match Card.of_num c with
+  | (r,s) -> r
+
+let deplace_freecell source destination =
+  if(source_valide source) then
+    match destination with
+      | Carte n -> if(destination_colonne_valide n) then match (FArray.get (etat.colonnes) (pos_destination n) ) with
+        | c1::l -> if (couleur_diff source n && ((get_rank source) = ((get_rank n) - 1)) ) then 
+          begin
+            match (pos_source_colonne source) with
+            | p -> begin
+                  etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+                  etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                  end
+            |exception Not_found -> begin (*cas ou la carte est dans un registre*)
+                etat.registres <- retire_carte_registre (Card.of_num source);
+                etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+              end
+            end
+        | _ -> raise Deplacement_impossible
+        else raise  Deplacement_impossible
+      
+      | T -> if (existe_registre_vide) then 
+        begin 
+          etat.colonnes <- retire_carte_colonne (pos_source_colonne (source));
+          etat.registres <- depose_carte_registre (Some (Card.of_num source));
+        end
+      else raise Deplacement_impossible
+      | V -> match (existe_colonne_vide) with
+        | pos ->  etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos)
+  else raise Deplacement_impossible
+
+(*mm couleur inf , col vide roi 4 Reg*)
+let deplace_seahaven source destination = 
+  if (source_valide source) then ()
+  else raise Deplacement_impossible
+
+
+(*mm couleur inf , col vide rien 0 Reg*)
+let deplace_midnight source destination = ()
+(*inf, col vide rien 0 Reg*)
+
+
+let deplace_baker   source destination= ()
+
+(* Fonctions d'affichage pour les tests*)
+let rec affiche_colonnes ind = 
+  match FArray.get etat.colonnes ind with
+   |  exception Not_found -> ()
+   | x -> 
+    begin 
+      List.iter (fun n -> Printf.printf "%s " (Card.to_string (n)) ) x; 
+      print_newline ();
+      affiche_colonnes (ind+1);
+    end
+
+  let rec affiche_colonnes_int ind = 
+    match FArray.get etat.colonnes ind with
+      |  exception Not_found -> ()
+      | x -> 
+      begin 
+        List.iter (fun n -> Printf.printf " %d " (Card.to_num n) )  (x); 
+        print_newline ();
+        affiche_colonnes_int (ind+1);
+      end
+
+  let affiche_registres () =
+    let rec affiche_registres_aux pos = 
+      match (FArray.get etat.registres pos) with
+      | exception Not_found -> ()
+      | None -> begin print_string " _ "; affiche_registres_aux (pos+1) ; end
+      | Some(x) ->begin print_string ((Card.to_string(x))^" ");  affiche_registres_aux (pos+1); end
+    in affiche_registres_aux 0
 
 (* TODO : La fonction suivante est à adapter et continuer *)
 
@@ -170,6 +339,39 @@ let treat_game conf =
   print_newline ();
   let res = partition_des_cartes (permut) in
   initialisation_colonnes res;
+  print_newline ();
+
+  affiche_colonnes 0;
+  print_newline ();
+  affiche_colonnes_int 0;
+  print_newline ();
+  affiche_registres ();
+  print_newline ();
+ 
+  deplace_freecell (31) T;
+  affiche_colonnes 0;
+  print_newline ();
+  affiche_colonnes_int 0;
+  print_newline ();
+  affiche_registres ();
+  print_newline ();
+  
+  deplace_freecell (18) T;
+  affiche_colonnes 0;
+  print_newline ();
+  affiche_colonnes_int 0;
+  print_newline ();
+  affiche_registres ();
+  print_newline ();
+
+  deplace_freecell (15) (Carte 16) ;
+  affiche_colonnes 0;
+  print_newline ();
+  affiche_colonnes_int 0;
+  print_newline ();
+  affiche_registres ();
+  print_newline ();
+  
 
   exit 0
 
@@ -184,3 +386,14 @@ let main () =
   treat_game config
 
 let _ = if not !Sys.interactive then main () else ()
+
+
+
+(*
+Def variable fichier: let file = "fichierSol..."
+Ouvrir un fichier lecture: let ic = open_in file in
+Lecture ligne let line = input_line ic in ....
+Fermer le fichier: close_in ic 
+Exception: End_of_file
+
+*)
