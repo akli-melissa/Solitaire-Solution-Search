@@ -9,7 +9,7 @@ type mode =
 
 
 type config = { mutable game : game; mutable seed: int; mutable mode: mode }
-let config = { game = Freecell; seed = 1; mode = Search "" }
+let config = { game = Seahaven; seed = 1; mode = Search "" }
 
 
 type etat = { 
@@ -251,6 +251,9 @@ let couleur_diff c1 c2 = (est_rouge c1 && est_noire c2) ||
 let get_rank c = match Card.of_num c with
   | (r,s) -> r
 
+let get_suit c = match Card.of_num c with
+  | (r,s) -> s
+
 let deplace_freecell source destination =
   if(source_valide source) then
     match destination with
@@ -282,7 +285,35 @@ let deplace_freecell source destination =
 
 (*mm couleur inf , col vide roi 4 Reg*)
 let deplace_seahaven source destination = 
-  if (source_valide source) then ()
+  if (source_valide source) then 
+    match destination with
+    | Carte n -> if(destination_colonne_valide n) then match (FArray.get (etat.colonnes) (pos_destination n)) with
+      | c1::l -> if (((get_suit source) = (get_suit n)) && ((get_rank source) = ((get_rank n) - 1)) ) then 
+        begin
+          match (pos_source_colonne source) with
+          | p -> begin
+                etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+                etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                end
+          |exception Not_found -> begin (*cas ou la carte est dans un registre*)
+              etat.registres <- retire_carte_registre (Card.of_num source);
+              etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+            end
+          end
+      | _ -> raise Deplacement_impossible
+      else raise  Deplacement_impossible
+    
+      | T -> if(existe_registre_vide) then
+      begin
+        etat.colonnes <- retire_carte_colonne (pos_source_colonne (source));
+        etat.registres <- depose_carte_registre (Some (Card.of_num source));
+      end
+    else raise Deplacement_impossible
+    | V -> if(get_rank source = 13) then 
+      match (existe_colonne_vide) with
+    | pos -> etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos)
+    else failwith ("Seahaven: Colonne vide reçoit uniquement un roi!")
+
   else raise Deplacement_impossible
 
 
@@ -335,6 +366,8 @@ let treat_game conf =
   (*print_string "C'est tout pour l'instant. TODO: continuer...\n";*)
   (* Selon la variante jouée, initialer *)
 
+
+  (*  Change dans etat.config: Freecel......    *)
   setEtat conf.game;
   print_newline ();
   let res = partition_des_cartes (permut) in
@@ -348,7 +381,7 @@ let treat_game conf =
   affiche_registres ();
   print_newline ();
  
-  deplace_freecell (31) T;
+  deplace_seahaven (19) T;
   affiche_colonnes 0;
   print_newline ();
   affiche_colonnes_int 0;
@@ -356,7 +389,7 @@ let treat_game conf =
   affiche_registres ();
   print_newline ();
   
-  deplace_freecell (18) T;
+  (*deplace_seahaven (18) T;
   affiche_colonnes 0;
   print_newline ();
   affiche_colonnes_int 0;
@@ -364,13 +397,13 @@ let treat_game conf =
   affiche_registres ();
   print_newline ();
 
-  deplace_freecell (15) (Carte 16) ;
+  deplace_seahaven (15) (Carte 16) ;
   affiche_colonnes 0;
   print_newline ();
   affiche_colonnes_int 0;
   print_newline ();
   affiche_registres ();
-  print_newline ();
+  print_newline ();*)
   
 
   exit 0
