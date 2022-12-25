@@ -1,6 +1,8 @@
 
 open XpatLib
 
+exception Deplacement_impossible;;
+
 type game = Freecell | Seahaven | Midnight | Baker
 
 type mode =
@@ -9,8 +11,7 @@ type mode =
 
 
 type config = { mutable game : game; mutable seed: int; mutable mode: mode }
-let config = { game = Seahaven; seed = 1; mode = Search "" }
-
+let config = { game = Freecell; seed = 1; mode = Search "" }
 
 type etat = { 
   mutable registres : Card.card option FArray.t  ;
@@ -24,6 +25,7 @@ let etat = {
   depots    = FArray.make 4 0
 }
 
+type deplacement = Carte of int | T | V
 
 let getgame = function
   | "FreeCell"|"fc" -> Freecell
@@ -46,8 +48,7 @@ let set_game_seed name =
                       "FreeCell Seahaven MidnightOil BakersDozen")
 
 (* Fonctions auxiliaires ajoutées *)
-exception Deplacement_impossible;;
-type deplacement = Carte of int | T | V
+
 
 
 let setEtat game = match game with
@@ -254,11 +255,12 @@ let get_rank c = match Card.of_num c with
 let get_suit c = match Card.of_num c with
   | (r,s) -> s
 
+
 let deplace_freecell source destination =
   if(source_valide source) then
     match destination with
       | Carte n -> if(destination_colonne_valide n) then match (FArray.get (etat.colonnes) (pos_destination n) ) with
-        | c1::l -> if (couleur_diff source n && ((get_rank source) = ((get_rank n) - 1)) ) then 
+        | _::_ -> if (couleur_diff source n && ((get_rank source - 1) = (get_rank n)) ) then 
           begin
             match (pos_source_colonne source) with
             | p -> begin
@@ -317,12 +319,78 @@ let deplace_seahaven source destination =
   else raise Deplacement_impossible
 
 
-(*mm couleur inf , col vide rien 0 Reg*)
-let deplace_midnight source destination = ()
-(*inf, col vide rien 0 Reg*)
+let deplace_midnight source destination = 
+  if (source_valide source) then
+    match destination with
+    | Carte n -> if(destination_colonne_valide n) then match (FArray.get (etat.colonnes) (pos_destination n)) with
+      | _ -> if (((get_suit source) = (get_suit n)) && ((get_rank source) = ((get_rank n) - 1)) ) then
+        begin
+          match (pos_source_colonne source) with
+          | p -> begin
+                etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+                etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                end
+          end
+      else raise Deplacement_impossible
+      else raise Deplacement_impossible
+    | T -> failwith ("Midnight: Destination = Carte")
+    | V -> failwith ("Midnight: Destination = Carte")
+  else raise Deplacement_impossible
 
 
-let deplace_baker   source destination= ()
+  (*inf, col vide rien 0 Reg*)
+let deplace_baker   source destination= 
+if (source_valide source) then
+  match destination with
+  | Carte n -> if(destination_colonne_valide n) then match (FArray.get (etat.colonnes) (pos_destination n)) with
+    | _ -> if (get_rank source) = ((get_rank n) - 1)  then 
+      begin
+        match (pos_source_colonne source) with
+        | p -> begin
+              etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+              etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+              end
+        end
+      else raise Deplacement_impossible
+  else raise Deplacement_impossible
+  | T -> failwith ("BakerDozen: Destination = Carte")
+  | V -> failwith ("BakerDozen: Destination = Carte")
+else raise Deplacement_impossible 
+
+
+let deplace_carte source destination = match config.game with
+| Freecell -> deplace_freecell source destination
+| Midnight -> deplace_midnight source destination
+| Baker -> deplace_baker source destination
+| Seahaven -> deplace_seahaven source destination
+
+
+
+(*
+Def variable fichier: let file = "fichierSol..."
+Ouvrir un fichier lecture: let ic = open_in file in
+Lecture ligne let line = input_line ic in ....
+Fermer le fichier: close_in ic 
+Exception: End_of_file
+
+*)
+
+let lire_fichier f =
+  let (*rec*) lecture_rec () = match (input_line f) with
+    | ligne -> match (String.split_on_char (' ') (ligne)) with
+    | [a;b] ->  
+    begin 
+    match b with
+     | "T" -> deplace_carte (int_of_string a) (T)
+     | "V" -> deplace_carte (int_of_string a) (V)
+     | _ -> deplace_carte (int_of_string a) (Carte(int_of_string b));
+     normalisation ();
+    end
+     | _ -> begin
+        close_in f;
+        raise End_of_file;
+    end
+  in lecture_rec()
 
 (* Fonctions d'affichage pour les tests*)
 let rec affiche_colonnes ind = 
@@ -357,23 +425,25 @@ let rec affiche_colonnes ind =
 
 let treat_game conf =
   let permut = XpatRandom.shuffle conf.seed in
-  Printf.printf "Voici juste la permutation de graine %d:\n" conf.seed;
+  print_newline ();
+  (*Printf.printf "Voici juste la permutation de graine %d:\n" conf.seed;*)
   List.iter (fun n -> print_int n; print_string " ") permut;
   print_newline ();
-  List.iter (fun n -> Printf.printf "%s " (Card.to_string (Card.of_num n)))
+  (*List.iter (fun n -> Printf.printf "%s " (Card.to_string (Card.of_num n)))
     permut;
-  print_newline ();
+  print_newline ();*)
   (*print_string "C'est tout pour l'instant. TODO: continuer...\n";*)
-  (* Selon la variante jouée, initialer *)
-
-
   (*  Change dans etat.config: Freecel......    *)
-  setEtat conf.game;
-  print_newline ();
-  let res = partition_des_cartes (permut) in
-  initialisation_colonnes res;
-  print_newline ();
+    setEtat conf.game;
+    let res = partition_des_cartes (permut) in
+    initialisation_colonnes res;
+    let fichier = match config.mode with
+    | Check s -> s
+    | Search s -> s in
+    let fd = open_in fichier in
+    lire_fichier fd;
 
+(*
   affiche_colonnes 0;
   print_newline ();
   affiche_colonnes_int 0;
@@ -388,25 +458,10 @@ let treat_game conf =
   print_newline ();
   affiche_registres ();
   print_newline ();
-  
-  (*deplace_seahaven (18) T;
-  affiche_colonnes 0;
-  print_newline ();
-  affiche_colonnes_int 0;
-  print_newline ();
-  affiche_registres ();
-  print_newline ();
 
-  deplace_seahaven (15) (Carte 16) ;
-  affiche_colonnes 0;
-  print_newline ();
-  affiche_colonnes_int 0;
-  print_newline ();
-  affiche_registres ();
-  print_newline ();*)
-  
+*)
 
-  exit 0
+ exit 0
 
 let main () =
   Arg.parse
@@ -420,13 +475,3 @@ let main () =
 
 let _ = if not !Sys.interactive then main () else ()
 
-
-
-(*
-Def variable fichier: let file = "fichierSol..."
-Ouvrir un fichier lecture: let ic = open_in file in
-Lecture ligne let line = input_line ic in ....
-Fermer le fichier: close_in ic 
-Exception: End_of_file
-
-*)
