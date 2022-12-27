@@ -125,10 +125,10 @@ let initialisation_colonnes permutation_partitionee =
 
 let partition_des_cartes permutation= 
     match config.game with 
-    | Seahaven -> partition_liste_seahaven permutation
-    | Freecell -> partition_liste_freecell permutation
-    | Midnight -> partition_liste_midnight permutation
-    | Baker    -> partition_liste_baker    permutation
+    | Seahaven -> etat.colonnes <- FArray.of_list (partition_liste_seahaven permutation)
+    | Freecell -> etat.colonnes <- FArray.of_list (partition_liste_freecell permutation)
+    | Midnight -> etat.colonnes <- FArray.of_list (partition_liste_midnight permutation)
+    | Baker    -> etat.colonnes <- FArray.of_list (partition_liste_baker    permutation)
 
 let rec mise_au_depot colonne pos = match colonne with
   | [] -> ()
@@ -373,6 +373,43 @@ let solution_complete =
       | _ -> false
 in solution_complete_aux 0
 
+(* Fonctions d'affichage pour les tests*)
+let rec affiche_colonnes ind = 
+  match FArray.get etat.colonnes ind with
+   |  exception Not_found -> ()
+   | x -> 
+    begin 
+      List.iter (fun n -> Printf.printf "%s " (Card.to_string (n)) ) x; 
+      print_newline ();
+      affiche_colonnes (ind+1);
+    end
+
+  let rec affiche_colonnes_int ind = 
+    match FArray.get etat.colonnes ind with
+      |  exception Not_found -> ()
+      | x -> 
+      begin 
+        List.iter (fun n -> Printf.printf " %d " (Card.to_num n) )  (x); 
+        print_newline ();
+        affiche_colonnes_int (ind+1);
+      end
+
+  let affiche_registres () =
+    let rec affiche_registres_aux pos = 
+      match (FArray.get etat.registres pos) with
+      | exception Not_found -> ()
+      | None -> begin print_string " _ "; affiche_registres_aux (pos+1) ; end
+      | Some(x) ->begin print_string ((Card.to_string(x))^" ");  affiche_registres_aux (pos+1); end
+    in affiche_registres_aux 0
+
+    let affiche_registres_int () =
+      let rec affiche_registres_int_aux pos = 
+        match (FArray.get etat.registres pos) with
+        | exception Not_found -> ()
+        | None -> begin print_string " _ "; affiche_registres_int_aux (pos+1) ; end
+        | Some(x) ->begin print_string (Int.to_string(Card.to_num(x)));  affiche_registres_int_aux (pos+1); end
+      in affiche_registres_int_aux 0
+  
 (*
 Def variable fichier: let file = "fichierSol..."
 Ouvrir un fichier lecture: let ic = open_in file in
@@ -382,8 +419,15 @@ Exception: End_of_file
 
 *)
 
+
 let lire_fichier f =
-  let rec lecture_rec n = match (input_line f) with
+  let rec lecture_rec n = begin 
+    print_newline();
+    affiche_colonnes_int 0;
+    print_newline();
+    affiche_registres_int ();
+    print_newline();
+    match (input_line f) with
     | exception End_of_file -> 
       begin
         if (solution_complete) then begin
@@ -423,7 +467,7 @@ let lire_fichier f =
                       exit 1;
                     end
                   end
-              | exception Not_found -> print_string ("ECHEC "^Int.to_string(n+13));
+              | exception Not_found -> print_string ("ECHEC "^Int.to_string(n+1));
               | _ -> 
                 begin
                   normalisation();
@@ -431,46 +475,18 @@ let lire_fichier f =
                 end
         end
       | _ -> ()
-
-  in lecture_rec 0
-
-(* Fonctions d'affichage pour les tests*)
-let rec affiche_colonnes ind = 
-  match FArray.get etat.colonnes ind with
-   |  exception Not_found -> ()
-   | x -> 
-    begin 
-      List.iter (fun n -> Printf.printf "%s " (Card.to_string (n)) ) x; 
-      print_newline ();
-      affiche_colonnes (ind+1);
-    end
-
-  let rec affiche_colonnes_int ind = 
-    match FArray.get etat.colonnes ind with
-      |  exception Not_found -> ()
-      | x -> 
-      begin 
-        List.iter (fun n -> Printf.printf " %d " (Card.to_num n) )  (x); 
-        print_newline ();
-        affiche_colonnes_int (ind+1);
       end
 
-  let affiche_registres () =
-    let rec affiche_registres_aux pos = 
-      match (FArray.get etat.registres pos) with
-      | exception Not_found -> ()
-      | None -> begin print_string " _ "; affiche_registres_aux (pos+1) ; end
-      | Some(x) ->begin print_string ((Card.to_string(x))^" ");  affiche_registres_aux (pos+1); end
-    in affiche_registres_aux 0
+  in lecture_rec 0
 
 (* TODO : La fonction suivante est à adapter et continuer *)
 
 let treat_game conf =
   let permut = XpatRandom.shuffle conf.seed in
-  (*print_newline ();
+  print_newline ();
   Printf.printf "Voici juste la permutation de graine %d:\n" conf.seed;
   List.iter (fun n -> print_int n; print_string " ") permut;
-  print_newline ();*)
+  print_newline ();
   (*List.iter (fun n -> Printf.printf "%s " (Card.to_string (Card.of_num n)))
     permut;*)
   (*print_string "C'est tout pour l'instant. TODO: continuer...\n";*)
