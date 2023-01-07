@@ -61,6 +61,18 @@ let setEtat game = match game with
   | Freecell -> ()
 
 
+let nb_colonnes game = match game with
+  | Freecell -> 8
+  | Seahaven -> 10
+  | Midnight -> 18
+  | Baker -> 13
+  
+let nb_registres game = match game with
+  | Freecell -> 4
+  | Seahaven -> 4
+  | Midnight -> 0
+  | Baker -> 4
+
 let partition_liste_freecell permutation  = 
   let rec partition_liste_freecell_aux perm res acc cpt ss = (*ss: six ou sept*)
     match perm with
@@ -130,28 +142,8 @@ let partition_des_cartes permutation=
     | Midnight -> etat.colonnes <- FArray.of_list (partition_liste_midnight permutation)
     | Baker    -> etat.colonnes <- FArray.of_list (partition_liste_baker    permutation)
 
-let rec mise_au_depot colonne pos = match colonne with
-  | [] -> ()
-  | carte::sub_l -> match carte with
-    |(r,s) ->
-      begin
-        if (r = (FArray.get (etat.depots) (Card.num_of_suit s))+1 ) then 
-        begin
-          etat.depots <- FArray.set (etat.depots) (Card.num_of_suit s) (r+1);
-          etat.colonnes <- FArray.set (etat.colonnes) (pos) (sub_l);
-          mise_au_depot sub_l pos;
-        end
-      end
 
-let normalisation()  = 
-  let rec normalisation_aux pos = 
-    match FArray.get (etat.colonnes) (pos) with
-    | exception Not_found -> ()
-    | colonne -> begin
-        mise_au_depot (colonne) (pos);
-        normalisation_aux (pos+1);
-    end
-  in normalisation_aux 0
+
 
   (*Source: Accessible, Destination: Vide *)
 
@@ -176,6 +168,11 @@ let retire_carte_registre carte =
   | None ->  retire_carte_registre_aux (None::res) (pos+1)
   | Some(x) -> if(x = carte) then (retire_carte_registre_aux (None::res) (pos+1) ) else (retire_carte_registre_aux (Some(x)::res) (pos+1))
   in retire_carte_registre_aux [] 0
+
+let depose_carte_depot carte = 
+  let (r,s) = carte in 
+  let rang_depot = FArray.get etat.depots (Card.num_of_suit s) in
+  (FArray.set etat.depots (Card.num_of_suit s)) (rang_depot+1)
 
 let existe_colonne_vide  = 
   let rec existe_colonne_vide_aux pos = match (FArray.get etat.colonnes pos) with
@@ -255,6 +252,70 @@ let get_suit c = match Card.of_num c with
   | (r,s) -> s
 
 
+let rec mise_au_depot_colonne pos etat bo =
+  if (pos >= nb_colonnes config.game ) then ()
+  else match (FArray.get etat.colonnes pos) with
+  | [] -> mise_au_depot_colonne (pos+1) etat false
+  | c::l -> let (r,s) = c in 
+  if r = ((FArray.get etat.depots (Card.num_of_suit s)) +1 ) then
+    begin
+      etat.colonnes <- FArray.set (etat.colonnes) (pos) (l);
+      etat.depots <-   depose_carte_depot c;
+    mise_au_depot_colonne (pos+1) (etat) true;
+    end
+  else mise_au_depot_colonne (pos+1) etat false
+
+
+let rec mise_au_depot_registre pos etat  b= 
+if (pos >= nb_registres config.game) then ()
+else let carte_registre = FArray.get etat.registres pos in 
+  match carte_registre with
+  | None -> mise_au_depot_registre (pos+1) etat false
+  | Some(c) -> let (r,s) = c in 
+  if r = (FArray.get etat.depots ((Card.num_of_suit s) + 1)) then
+    begin
+      etat.registres <- FArray.set etat.registres pos None; 
+      etat.depots <- depose_carte_depot c;
+      mise_au_depot_registre (pos+1) (etat) true; 
+   end
+  else mise_au_depot_registre (pos+1) (etat) false 
+
+let rec normalisation etat b = 
+  begin
+        mise_au_depot_colonne 0 etat b;
+        mise_au_depot_registre 0 etat b;
+      if b = false then () else normalisation etat b;
+  end
+
+
+(*
+
+let rec mise_au_depot_colonne colonne pos = match colonne with
+  | [] -> ()
+  | carte::sub_l -> match carte with
+    |(r,s) ->
+      begin
+        if (r = (FArray.get (etat.depots) (Card.num_of_suit s))+1 ) then 
+        begin
+          etat.depots <- FArray.set (etat.depots) (Card.num_of_suit s) (r+1);
+          etat.colonnes <- FArray.set (etat.colonnes) (pos) (sub_l);
+          mise_au_depot_colonne sub_l (pos);
+
+        end
+      end
+
+let normalisation()  = 
+  let rec normalisation_aux pos = 
+    match FArray.get (etat.colonnes) (pos) with
+    | exception Not_found -> ()
+    | colonne -> begin
+        mise_au_depot_colonne (colonne) (pos);
+        normalisation_aux (pos+1);
+    end
+  in normalisation_aux 0
+*)
+  
+
 let deplace_freecell source destination =
   if(source_valide source) then
     match destination with
@@ -272,10 +333,11 @@ let deplace_freecell source destination =
                 etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
               end
             end
+          else raise Deplacement_impossible
         | _ -> raise Deplacement_impossible
         else raise  Deplacement_impossible
       
-      | T -> if (existe_registre_vide) then 
+      | T -> if (existe_registre_vide ) then 
         begin 
           etat.colonnes <- retire_carte_colonne (pos_source_colonne (source));
           etat.registres <- depose_carte_registre (Some (Card.of_num source));
@@ -365,13 +427,12 @@ let deplace_carte source destination = match config.game with
 | Seahaven -> deplace_seahaven source destination
 
 
-let solution_complete = 
-  let rec solution_complete_aux pos = 
-    match (FArray.get (etat.depots) (pos)) with
-      | exception Not_found -> true
-      | 13 -> solution_complete_aux (pos+1)
-      | _ -> false
-in solution_complete_aux 0
+let solution_complete etat = 
+  let rec solution_complete_aux pos etat = 
+    if pos = (FArray.length etat.depots) then true
+    else if (FArray.get etat.depots pos) = 13 then solution_complete_aux (pos+1) etat
+    else false
+in  solution_complete_aux 0 etat
 
 (* Fonctions d'affichage pour les tests*)
 let rec affiche_colonnes ind = 
@@ -398,18 +459,25 @@ let rec affiche_colonnes ind =
     let rec affiche_registres_aux pos = 
       match (FArray.get etat.registres pos) with
       | exception Not_found -> ()
-      | None -> begin print_string " _ "; affiche_registres_aux (pos+1) ; end
-      | Some(x) ->begin print_string ((Card.to_string(x))^" ");  affiche_registres_aux (pos+1); end
+      | None -> begin print_string "  _  "; affiche_registres_aux (pos+1) ; end
+      | Some(x) ->begin print_string (" "^(Card.to_string(x))^" ");  affiche_registres_aux (pos+1); end
     in affiche_registres_aux 0
 
     let affiche_registres_int () =
       let rec affiche_registres_int_aux pos = 
         match (FArray.get etat.registres pos) with
         | exception Not_found -> ()
-        | None -> begin print_string " _ "; affiche_registres_int_aux (pos+1) ; end
-        | Some(x) ->begin print_string (Int.to_string(Card.to_num(x)));  affiche_registres_int_aux (pos+1); end
+        | None -> begin print_string "  _  "; affiche_registres_int_aux (pos+1) ; end
+        | Some(x) ->begin print_string (" "^(Int.to_string(Card.to_num(x)))^" ");  affiche_registres_int_aux (pos+1); end
       in affiche_registres_int_aux 0
   
+let affiche_depots () = 
+  let rec affiche_depot_aux pos = 
+    match (FArray.get etat.depots pos) with
+    | exception Not_found -> ()
+    | _ -> begin print_string(" "^ Int.to_string (FArray.get etat.depots pos) ^" "); affiche_depot_aux (pos+1) end
+  in affiche_depot_aux 0
+
 (*
 Def variable fichier: let file = "fichierSol..."
 Ouvrir un fichier lecture: let ic = open_in file in
@@ -421,21 +489,26 @@ Exception: End_of_file
 
 
 let lire_fichier f =
-  let rec lecture_rec n = begin 
+  let rec lecture_rec n = begin
+    normalisation etat false ;
     print_newline();
     affiche_colonnes_int 0;
     print_newline();
+    affiche_colonnes 0;
+    print_newline();
     affiche_registres_int ();
+    print_newline();
+    affiche_depots();
     print_newline();
     match (input_line f) with
     | exception End_of_file -> 
       begin
-        if (solution_complete) then begin
+        if (solution_complete etat) then begin
           print_string "SUCCES";
           exit 0;
         end
         else begin 
-          print_string ("ECHEC "^Int.to_string(n+1));
+          print_string ("ECHEC "^Int.to_string(n));
           exit 1;
         end
       end
@@ -445,39 +518,47 @@ let lire_fichier f =
           match b with
             | "T" ->
               begin
-                deplace_carte (int_of_string a) (T);
-                normalisation();
-                lecture_rec (n+1);
+                match deplace_carte (int_of_string a) (T) with
+                | exception Deplacement_impossible -> print_string ("ECHEC "^Int.to_string(n));
+                | _ -> 
+                  begin
+                  normalisation etat false;
+                  lecture_rec (n+1);
+                end
               end
             | "V" ->
-              begin
-                deplace_carte (int_of_string a) (V);
-                normalisation();
-                lecture_rec (n+1);
-              end
-            | _   -> match (deplace_carte (int_of_string a) (Carte(int_of_string b))) with
+                begin
+                  match deplace_carte (int_of_string a) (V) with
+                  | exception Deplacement_impossible -> print_string ("ECHEC "^Int.to_string(n));
+                  | _ -> 
+                    begin
+                    normalisation etat false;
+                    lecture_rec (n+1);
+                  end
+                end
+            | _   ->(match (deplace_carte (int_of_string a) (Carte(int_of_string b))) with
               | exception Deplacement_impossible -> 
                   begin
-                    if (solution_complete) then begin
+                    if (solution_complete etat) then begin
                       print_string "SUCCES";
                       exit 0;
                     end
                     else begin 
-                      print_string ("ECHEC "^Int.to_string(n+1));
+                      print_string ("ECHEC "^Int.to_string(n));
                       exit 1;
                     end
                   end
-              | exception Not_found -> print_string ("ECHEC "^Int.to_string(n+1));
+              | exception Not_found -> print_string ("ECHEC "^Int.to_string(n));
               | _ -> 
                 begin
-                  normalisation();
+                  normalisation etat false;
                   lecture_rec (n+1);
-                end
+                end)
         end
       | _ -> ()
       end
 
-  in lecture_rec 0
+  in lecture_rec 1
 
 (* TODO : La fonction suivante est à adapter et continuer *)
 
