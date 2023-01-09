@@ -19,6 +19,16 @@ Et pour notre état initial on a tout initialisé selon FreeCell de sorte que si
 le jeu FreeCell.
 
 2.Validation d'un fichier solution 
+ .Les coups :
+   Pour modeliser les coups, il faut se concentrer sur les différents déplacements qu'on peut avoir (et bien sur vérifier les conditions selon chaque variante).
+   - Deplacement colonne vers colonne
+   - Deplacement colonne vers registre 
+   - Deplacement registre vers colonne 
+ .La normalisation :
+   Par normalisation on veut dire le deplacement qui permet de mettre une carte dans le depot.
+   - Deplacement colonne vers depot 
+   - Deplacement registre vers depot
+ .Lecture d'un fichier solution :
 
 
 3.Création de permutations 
