@@ -117,39 +117,74 @@ let shuffle_test = function
       45;5;3;41;15;12;31;17;28;8;29;30;37]
   | _ -> failwith "shuffle : unsupported number (TODO)"
 
-(*Chaque étape de l'algo décrit ci-dessus a sa propre fonction *)  
-let deuxieme_composante n seed =
-   let rec deuxieme_composante_aux n a b = match n with
-      | 0 -> a
-      | 1 -> b
-      | _ -> if(a>=b) then deuxieme_composante_aux (n-1) (b) (a-b) 
-            else deuxieme_composante_aux (n) (b) (a-b+randmax)
-   in deuxieme_composante_aux n seed 1
 
-let paire n seed = ( (n*21) mod 55, deuxieme_composante n seed )
-
-let liste_paires seed =
-   List.init 55 (fun x -> paire (x) (seed)) 
-
-let n_premiers liste n = 
-   let rec n_premiers_aux liste n res = 
-      match liste with
-      | [] -> List.rev res
-      | x::l -> match n with
-               | 0 -> List.rev res
-               | _ -> n_premiers_aux (l) (n-1) (x::res)
-   in n_premiers_aux liste n []
-
-let n_derniers liste n = List.rev (n_premiers (List.rev liste) (n))
-
-let m_tirages f1 f2 m = 
-   let rec m_tirages_aux f1 f2 m res = match m with
-      | 0 -> (f1, f2, res)
-      | _ -> match ((Fifo.pop f1),(Fifo.pop f2)) with
-         | ((x1,y1),(x2,y2)) -> if (x1 >= x2) then m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2) y2) (m-1) ((x1-x2) :: res)
-                                else m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2+randmax) y2) (m-1) ((x1-x2+randmax) :: res)
-   in m_tirages_aux f1 f2 m []  
-      
+let max a b = if (b <= a) then a - b else a - b + randmax
+let diviseur = 21 mod 55
+  
+let perm graine =
+      let rec perm_aux n avant graine_1 graine_2=
+          if (n = 55) then []
+          else
+              if (n = 0) then
+                  (0, graine_1)::(perm_aux (n+1) 0 (graine_1+1) graine_1)
+              else
+                  let acc = (avant + diviseur) mod 55 in
+                  let nv = max graine_1 graine_2 in
+                  (acc, nv) :: (perm_aux (n+1) (acc) (graine_2) (nv))
+      in perm_aux 0 0 graine 0
+;;
+  
+let rec sous_liste liste debut fin =
+      if (debut > fin) then []
+      else let l = List.nth liste debut
+      in l :: (sous_liste liste (debut+1) fin)
+;;
+  
+let f = (fun a b -> let (a1,_) = a in let (b1,_)=b in if (a1<b1) then -1 else if (a1=b1) then 0 else 1)
+  
+let reduire liste =
+   let liste_trie =
+          let liste_trie_1 = List.sort f liste
+          in List.map (fun x -> let _,b = x in b) liste_trie_1
+      in let i1 = Fifo.of_list (sous_liste liste_trie 24 54)
+      in let i2 = Fifo.of_list (sous_liste liste_trie 0 23)
+      in i1, i2
+;;
+  
+let rec tirage file_1 file_2 n =
+      if (n <= 0) then [], file_1, file_2
+      else let n1, update_file_1 = Fifo.pop file_1 in
+          let n2, update_file_2 = Fifo.pop file_2 in
+          let d = max n1 n2
+          in let l, f1, f2 = (tirage (Fifo.push n2 update_file_1) (Fifo.push d update_file_2) (n-1))
+          in (d :: l), f1, f2 
+;;
+  
+let reduire_liste liste limit =
+      let rec reduire_liste_aux liste limit n size=
+          if (n >= size) then []
+          else let res = reduce (List.nth liste n) limit in
+          res :: (reduire_liste_aux liste (limit-1) (n+1) size) in
+      reduire_liste_aux liste limit 0 (List.length liste)
+    
+;;
+  
+let permutation_reduite liste =
+      let rec permutation_reduite_aux liste sous_liste =
+          match liste with
+              | [] -> []
+              | b::bs -> let res = List.nth sous_liste b in
+                  (permutation_reduite_aux bs (List.filter (fun x->x!=res) sous_liste))@[res]
+      in let rec gen_list a b =
+          if (a >= b) then []
+          else a :: gen_list (a+1) b
+      in permutation_reduite_aux liste (gen_list 0 52)
+;;
+  
 let shuffle n =
-
-  shuffle_test n (* TODO: changer en une implementation complete *)
+     let paires = perm n in
+     let f1_init, f2_init = reduire paires in
+     let _, f1_165, f2_165 = tirage f1_init f2_init 165 in
+     let tirages_52, _, _ = tirage f1_165 f2_165 52 in
+     let reduced_52 = reduire_liste tirages_52 52 in
+     permutation_reduite reduced_52;;
