@@ -187,4 +187,5 @@ let shuffle n =
      let _, f1_165, f2_165 = tirage f1_init f2_init 165 in
      let tirages_52, _, _ = tirage f1_165 f2_165 52 in
      let reduced_52 = reduire_liste tirages_52 52 in
-     permutation_reduite reduced_52;;
+     permutation_reduite reduced_52 
+;;
