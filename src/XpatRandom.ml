@@ -7,6 +7,8 @@
 
 *)
 
+open Fifo
+
 (* The numbers manipulated below will be in [0..randmax[ *)
 let randmax = 1_000_000_000
 
@@ -15,57 +17,6 @@ let reduce n limit =
   Int.(of_float (to_float n /. to_float randmax *. to_float limit))
 
 
-(* DESCRIPTION DE L'ALGORITHME DE GENERATION DES PERMUTATIONS
-
-a) Créer tout d'abord les 55 premières paires suivantes:
-  . premières composantes : 0 pour la premiere paire,
-    puis ajouter 21 modulo 55 à chaque fois
-  . secondes composantes : graine, puis 1, puis les "différences"
-    successives entre les deux dernières secondes composantes.
-    Par "différence" entre a et b on entend
-      - Ou bien (a-b) si b<=a
-      - Ou bien (a-b+randmax) si a<b
-
-b) Trier ces 55 paires par ordre croissant selon leurs premières composantes,
-   puis séparer entre les 24 premières paires et les 31 suivantes.
-   Pour les 31 paires, leurs secondes composantes sont à mettre dans
-   une FIFO f1_init, dans cet ordre (voir `Fifo.of_list` documenté dans
-   `Fifo.mli`). De même pour les 24 paires, leurs secondes composantes sont
-   à mettre dans une FIFO f2_init, dans cet ordre.
-
-c) Un *tirage* à partir de deux FIFO (f1,f2) consiste à prendre
-   leurs premières valeurs respectives n1 et n2 (cf `Fifo.pop`),
-   puis calculer la "différence" de n1 et n2 (comme auparavant),
-   nommons-la d. Ce d est alors le résultat du tirage, associé
-   à deux nouvelles FIFO constituées des restes des anciennes FIFO
-   auxquelles on a rajouté respectivement n2 et d (cf `Fifo.push`).
-
-d) On commence alors par faire 165 tirages successifs en partant
-   de (f1_init,f2_init). Ces tirages servent juste à mélanger encore
-   les FIFO qui nous servent d'état de notre générateur pseudo-aléatoire,
-   les entiers issus de ces 165 premiers tirages ne sont pas considérés.
-
-e) La fonction de tirage vue précédemment produit un entier dans
-   [0..randmax[. Pour en déduire un entier dans [0..limit[ (ou limit est
-   un entier positif quelconque), on utilisera alors la fonction `reduce`
-   fournie plus haut.
-   Les tirages suivants nous servent à créer la permutation voulue des
-   52 cartes. On commence avec une liste des nombres successifs entre 0 et 51.
-   Un tirage dans [0..52[ nous donne alors la position du dernier nombre
-   à mettre dans notre permutation. On enlève alors le nombre à cette position
-   dans la liste. Puis un tirage dans [0..51[ nous donne la position
-   (dans la liste restante) de l'avant-dernier nombre de notre permutation.
-   On continue ainsi à tirer des positions valides dans la liste résiduelle,
-   puis à retirer les nombres à ces positions tirées pour les ajouter devant
-   la permutation, jusqu'à épuisement de la liste. Le dernier nombre retiré
-   de la liste donne donc la tête de la permutation.
-
-   NB: /!\ la version initiale de ce commentaire donnait par erreur
-   la permutation dans l'ordre inverse).
-
-TODO mettre des exemples intermédiaires
-
-*)
 
 (* For now, we provide a shuffle function that can handle a few examples.
    This can be kept later for testing your implementation. *)
@@ -117,39 +68,6 @@ let shuffle_test = function
       45;5;3;41;15;12;31;17;28;8;29;30;37]
   | _ -> failwith "shuffle : unsupported number (TODO)"
 
-(*Chaque étape de l'algo décrit ci-dessus a sa propre fonction *)  
-let deuxieme_composante n seed =
-   let rec deuxieme_composante_aux n a b = match n with
-      | 0 -> a
-      | 1 -> b
-      | _ -> if(a>=b) then deuxieme_composante_aux (n-1) (b) (a-b) 
-            else deuxieme_composante_aux (n) (b) (a-b+randmax)
-   in deuxieme_composante_aux n seed 1
 
-let paire n seed = ( (n*21) mod 55, deuxieme_composante n seed )
 
-let liste_paires seed =
-   List.init 55 (fun x -> paire (x) (seed)) 
-
-let n_premiers liste n = 
-   let rec n_premiers_aux liste n res = 
-      match liste with
-      | [] -> List.rev res
-      | x::l -> match n with
-               | 0 -> List.rev res
-               | _ -> n_premiers_aux (l) (n-1) (x::res)
-   in n_premiers_aux liste n []
-
-let n_derniers liste n = List.rev (n_premiers (List.rev liste) (n))
-
-let m_tirages f1 f2 m = 
-   let rec m_tirages_aux f1 f2 m res = match m with
-      | 0 -> (f1, f2, res)
-      | _ -> match ((Fifo.pop f1),(Fifo.pop f2)) with
-         | ((x1,y1),(x2,y2)) -> if (x1 >= x2) then m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2) y2) (m-1) ((x1-x2) :: res)
-                                else m_tirages_aux (Fifo.push x2 y1) (Fifo.push (x1-x2+randmax) y2) (m-1) ((x1-x2+randmax) :: res)
-   in m_tirages_aux f1 f2 m []  
-      
-let shuffle n =
-
-  shuffle_test n (* TODO: changer en une implementation complete *)
+let shuffle seed = shuffle_test seed;
