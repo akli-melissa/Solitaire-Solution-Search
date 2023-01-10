@@ -489,7 +489,7 @@ Exception: End_of_file
 
 let lire_fichier f =
   let rec lecture_rec n = begin
-   (* normalisation etat false ;*)
+    normalisation etat false ;
     print_newline();
     affiche_colonnes_int 0;
     print_newline();
