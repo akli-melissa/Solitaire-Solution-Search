@@ -12,6 +12,8 @@ type mode =
 type config = { mutable game : game; mutable seed: int; mutable mode: mode }
 let config = { game = Freecell; seed = 1; mode = Search "" }
 
+
+(*Structures de données*)
 type etat = { 
   mutable registres : Card.card option FArray.t  ;
   mutable colonnes : Card.card list FArray.t  ;
@@ -24,6 +26,7 @@ let etat = {
   depots    = FArray.make 4 0
 }
 
+(*Déplacements possibles dans une ligne d'un fichier: Int, V (Colonne vide), T (Registre)*)
 type deplacement = Carte of int | T | V
 
 let getgame = function
@@ -71,6 +74,9 @@ let nb_registres game = match game with
   | Seahaven -> 4
   | Midnight -> 0
   | Baker -> 4
+
+
+(*Partition des cartes selon les conditions de chaque variante du jeu*)
 
 let partition_liste_freecell permutation  = 
   let rec partition_liste_freecell_aux perm res acc cpt ss = (*ss: six ou sept*)
@@ -144,22 +150,33 @@ let partition_des_cartes permutation=
 
 
 
-  (*Source: Accessible, Destination: Vide *)
+    (*Source: Accessible, Destination: Vide *)
+let depose_carte_colonne carte pos_colonne = FArray.set (etat.colonnes) (pos_colonne) (carte::(FArray.get etat.colonnes pos_colonne))
 
-let depose_carte_colonne carte pos_colonne =   match (FArray.get etat.colonnes pos_colonne) with 
-    | col -> FArray.set (etat.colonnes) (pos_colonne) (carte::(FArray.get etat.colonnes pos_colonne))
+let retire_carte_colonne etat pos =
+  if ( pos >= nb_colonnes config.game ) then raise Not_found
+  else match (FArray.get etat.colonnes pos) with
+    | [] -> failwith("Pas de carte à retirer sur cette colonne")
+    | x::col -> FArray.set etat.colonnes pos col 
 
-let retire_carte_colonne pos_colonne = match (FArray.get etat.colonnes pos_colonne) with
-  | carte::col -> FArray.set (etat.colonnes) (pos_colonne) (col)
-  | [] -> failwith ("Aucune carte à retirer pour cette colonne!")
-  | exception Not_found -> raise Deplacement_impossible
+let depose_carte_registre c = 
+  let rec depose_carte_registre_aux pos c res posee = 
+    if (pos >= nb_registres config.game) then FArray.of_list (List.rev res)
+    else match (FArray.get etat.registres pos) with
+      | None -> if(posee) then depose_carte_registre_aux (pos+1) (c) (None::res) (posee) 
+                else depose_carte_registre_aux (pos+1) (c) (c::res) (true)
+      | Some(x) -> depose_carte_registre_aux (pos+1) c (Some(x)::res) (posee)
+  in depose_carte_registre_aux 0 c [] false
 
-let depose_carte_registre carte = 
-  let rec depose_carte_registre_aux pos carte res posee = match (FArray.get etat.registres pos) with
-  | exception Not_found -> FArray.of_list res (*A revoir *)
-  | None -> if(posee = false) then depose_carte_registre_aux (pos+1) (carte) (carte::res) (true) else depose_carte_registre_aux (pos+1) (carte) (None::res) (posee)
-  | x -> depose_carte_registre_aux  (pos+1) carte (x::res)  (posee)
-  in depose_carte_registre_aux (0) (carte) ([]) (false) (*Renvoie le res à l'envers mais pas trop grave*)
+let retire_carte_registre carte = 
+  let rec retire_carte_registre_aux c res pos =
+    if (pos >= nb_registres config.game) then (List.rev res)
+    else match (FArray.get etat.registres pos) with
+    | None ->  retire_carte_registre_aux  (c) (None::res) (pos+1)
+    | Some(x) -> if(x = carte) then (retire_carte_registre_aux (c) (None::res) (pos+1) ) else (retire_carte_registre_aux (c) (Some(x)::res) (pos+1))
+  in retire_carte_registre_aux carte [] 0
+
+
 
 let retire_carte_registre carte = 
   let rec retire_carte_registre_aux  res (pos) = match (FArray.get etat.registres (pos)) with
@@ -169,16 +186,15 @@ let retire_carte_registre carte =
   in retire_carte_registre_aux [] 0
 
 let depose_carte_depot carte = 
-  let (r,s) = carte in 
-  let rang_depot = FArray.get etat.depots (Card.num_of_suit s) in
-  (FArray.set etat.depots (Card.num_of_suit s)) (rang_depot+1)
+  let (r,s) = carte in FArray.set etat.depots (Card.num_of_suit s) (r)
 
-let existe_colonne_vide  = 
-  let rec existe_colonne_vide_aux pos = match (FArray.get etat.colonnes pos) with
-    | exception Not_found -> raise Deplacement_impossible
-    | [] -> pos
-    | _::_ -> existe_colonne_vide_aux (pos+1)
-  in existe_colonne_vide_aux (0)
+  let existe_colonne_vide etat =
+    let rec existe_colonne_vide_aux etat  pos = 
+      if (pos >= nb_colonnes config.game) then raise Not_found
+      else match FArray.get etat.colonnes pos with
+      | [] -> pos
+      | _ -> existe_colonne_vide_aux etat  (pos+1)
+    in existe_colonne_vide_aux etat (0)
 
 let existe_registre_vide = 
   let rec existe_registre_vide_aux pos = match (FArray.get etat.registres pos) with
@@ -186,7 +202,7 @@ let existe_registre_vide =
     | None -> true
     | _ -> existe_registre_vide_aux (pos+1)
   in existe_registre_vide_aux (0)
-
+  
   let pos_source_colonne src = 
   let rec pos_source_aux source pos =
     match FArray.get (etat.colonnes) (pos) with
@@ -256,11 +272,11 @@ let rec mise_au_depot_colonne pos etat bo =
   else match (FArray.get etat.colonnes pos) with
   | [] -> mise_au_depot_colonne (pos+1) etat false
   | c::l -> let (r,s) = c in 
-  if r = ((FArray.get etat.depots (Card.num_of_suit s)) +1 ) then
+  if r = (FArray.get etat.depots (Card.num_of_suit s)) + 1 then
     begin
       etat.colonnes <- FArray.set (etat.colonnes) (pos) (l);
       etat.depots <-   depose_carte_depot c;
-    mise_au_depot_colonne (pos+1) (etat) true;
+    mise_au_depot_colonne (0) (etat) true;
     end
   else mise_au_depot_colonne (pos+1) etat false
 
@@ -271,7 +287,7 @@ else let carte_registre = FArray.get etat.registres pos in
   match carte_registre with
   | None -> mise_au_depot_registre (pos+1) etat false
   | Some(c) -> let (r,s) = c in 
-  if r = (FArray.get etat.depots ((Card.num_of_suit s) + 1)) then
+  if r = FArray.get etat.depots ((Card.num_of_suit s)) + 1 then
     begin
       etat.registres <- FArray.set etat.registres pos None; 
       etat.depots <- depose_carte_depot c;
@@ -287,34 +303,7 @@ let rec normalisation etat b =
   end
 
 
-(*
-
-let rec mise_au_depot_colonne colonne pos = match colonne with
-  | [] -> ()
-  | carte::sub_l -> match carte with
-    |(r,s) ->
-      begin
-        if (r = (FArray.get (etat.depots) (Card.num_of_suit s))+1 ) then 
-        begin
-          etat.depots <- FArray.set (etat.depots) (Card.num_of_suit s) (r+1);
-          etat.colonnes <- FArray.set (etat.colonnes) (pos) (sub_l);
-          mise_au_depot_colonne sub_l (pos);
-
-        end
-      end
-
-let normalisation()  = 
-  let rec normalisation_aux pos = 
-    match FArray.get (etat.colonnes) (pos) with
-    | exception Not_found -> ()
-    | colonne -> begin
-        mise_au_depot_colonne (colonne) (pos);
-        normalisation_aux (pos+1);
-    end
-  in normalisation_aux 0
-*)
-  
-
+(* Un coup (déplacement) pour chacune des variantes demandées  *)
 let deplace_freecell source destination =
   if(source_valide source) then
     match destination with
@@ -323,13 +312,15 @@ let deplace_freecell source destination =
           begin
             match (pos_source_colonne source) with
             | p -> begin
-                  etat.colonnes <- retire_carte_colonne p; 
+                  etat.colonnes <- retire_carte_colonne etat p; 
                   etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                  normalisation etat false;
                   end
             |exception Not_found -> 
               begin (*cas ou la carte est dans un registre*)
                 etat.registres <- retire_carte_registre (Card.of_num source);
                 etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                normalisation etat false;
               end
             end
           else raise Deplacement_impossible
@@ -338,12 +329,20 @@ let deplace_freecell source destination =
       
       | T -> if (existe_registre_vide ) then 
         begin 
-          etat.colonnes <- retire_carte_colonne (pos_source_colonne (source));
+          etat.colonnes <- retire_carte_colonne etat (pos_source_colonne (source));
           etat.registres <- depose_carte_registre (Some (Card.of_num source));
+          normalisation etat false;
         end
-      else raise Deplacement_impossible
-      | V -> match (existe_colonne_vide) with
-        | pos ->  etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos)
+        else raise Deplacement_impossible
+      | V -> (match (existe_colonne_vide etat) with
+        | pos -> 
+            begin 
+              etat.colonnes <- retire_carte_colonne etat (pos_source_colonne source);
+              etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos);
+              normalisation etat false;
+              end
+        | exception Not_found ->  raise Deplacement_impossible
+        )
   else raise Deplacement_impossible
 
 (*mm couleur inf , col vide roi 4 Reg*)
@@ -355,8 +354,9 @@ let deplace_seahaven source destination =
         begin
           match (pos_source_colonne source) with
           | p -> begin
-                etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+                etat.colonnes <- retire_carte_colonne etat (pos_source_colonne source); 
                 etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                normalisation etat false;
                 end
           |exception Not_found -> begin (*cas ou la carte est dans un registre*)
               etat.registres <- retire_carte_registre (Card.of_num source);
@@ -368,13 +368,20 @@ let deplace_seahaven source destination =
     
       | T -> if(existe_registre_vide) then
       begin
-        etat.colonnes <- retire_carte_colonne (pos_source_colonne (source));
+        normalisation etat false;
+        etat.colonnes <- retire_carte_colonne etat (pos_source_colonne (source));
         etat.registres <- depose_carte_registre (Some (Card.of_num source));
+        normalisation etat false;
       end
     else raise Deplacement_impossible
     | V -> if(get_rank source = 13) then 
-      match (existe_colonne_vide) with
-    | pos -> etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos)
+      match (existe_colonne_vide etat) with
+      | pos -> begin
+        normalisation etat false;
+        etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos);
+        etat.registres <- retire_carte_registre (Card.of_num source);
+        normalisation etat false;
+        end
     else failwith ("Seahaven: Colonne vide reçoit uniquement un roi!")
 
   else raise Deplacement_impossible
@@ -388,8 +395,9 @@ let deplace_midnight source destination =
         begin
           match (pos_source_colonne source) with
           | p -> begin
-                etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+                etat.colonnes <- retire_carte_colonne etat (pos_source_colonne source); 
                 etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+                normalisation etat false;
                 end
           end
       else raise Deplacement_impossible
@@ -408,8 +416,9 @@ if (source_valide source) then
       begin
         match (pos_source_colonne source) with
         | p -> begin
-              etat.colonnes <- retire_carte_colonne (pos_source_colonne source); 
+              etat.colonnes <- retire_carte_colonne etat (pos_source_colonne source); 
               etat.colonnes <- depose_carte_colonne (Card.of_num source) (pos_destination n) ;
+              normalisation etat false;
               end
         end
       else raise Deplacement_impossible
@@ -426,12 +435,15 @@ let deplace_carte source destination = match config.game with
 | Seahaven -> deplace_seahaven source destination
 
 
+(* Si tous les dépôts sont à 13 *)
 let solution_complete etat = 
   let rec solution_complete_aux pos etat = 
     if pos = (FArray.length etat.depots) then true
     else if (FArray.get etat.depots pos) = 13 then solution_complete_aux (pos+1) etat
     else false
 in  solution_complete_aux 0 etat
+
+
 
 (* Fonctions d'affichage pour les tests*)
 let rec affiche_colonnes ind = 
@@ -477,31 +489,17 @@ let affiche_depots () =
     | _ -> begin print_string(" "^ Int.to_string (FArray.get etat.depots pos) ^" "); affiche_depot_aux (pos+1) end
   in affiche_depot_aux 0
 
-(*
-Def variable fichier: let file = "fichierSol..."
-Ouvrir un fichier lecture: let ic = open_in file in
-Lecture ligne let line = input_line ic in ....
-Fermer le fichier: close_in ic 
-Exception: End_of_file
-
-*)
 
 
+(* Fonction de lecture dans le fichier solution, traitement de la ligne  *)
 let lire_fichier f =
   let rec lecture_rec n = begin
     normalisation etat false ;
-    print_newline();
-    affiche_colonnes_int 0;
-    print_newline();
-    affiche_colonnes 0;
-    print_newline();
-    affiche_registres_int ();
-    print_newline();
-    affiche_depots();
-    print_newline();
     match (input_line f) with
     | exception End_of_file -> 
+      normalisation etat false;
       begin
+        normalisation etat false;
         if (solution_complete etat) then begin
           print_string "SUCCES";
           exit 0;
@@ -514,6 +512,7 @@ let lire_fichier f =
     | ligne -> match (String.split_on_char (' ') (ligne)) with
       | [a;b] ->
         begin
+          normalisation etat false;
           match b with
             | "T" ->
               begin
@@ -537,29 +536,21 @@ let lire_fichier f =
                 end
             | _   ->(match (deplace_carte (int_of_string a) (Carte(int_of_string b))) with
               | exception Deplacement_impossible -> 
-                  begin
-                    if (solution_complete etat) then begin
-                      print_string "SUCCES";
-                      exit 0;
-                    end
-                    else begin 
+                    begin
                       print_string ("ECHEC "^Int.to_string(n));
                       exit 1;
                     end
-                  end
-              | exception Not_found -> print_string ("ECHEC "^Int.to_string(n));
               | _ -> 
                 begin
                   normalisation etat false;
                   lecture_rec (n+1);
-                end)
+                end);
         end
-      | _ -> ()
+      | _ -> normalisation etat false
       end
-
+  
   in lecture_rec 1
 
-(* TODO : La fonction suivante est à adapter et continuer *)
 
 let treat_game conf =
   let permut = XpatRandom.shuffle conf.seed in
@@ -569,9 +560,7 @@ let treat_game conf =
   print_newline ();
   (*List.iter (fun n -> Printf.printf "%s " (Card.to_string (Card.of_num n)))
     permut;*)
-  (*print_string "C'est tout pour l'instant. TODO: continuer...\n";*)
-  (*  Change dans etat.config: Freecel......    *)  
-    
+  (*print_string "C'est tout pour l'instant. TODO: continuer...\n";*)    
   setEtat conf.game;
   let res = partition_des_cartes (permut) in
   let fichier = match config.mode with
@@ -579,26 +568,7 @@ let treat_game conf =
     | Search s -> s in
     let fd = open_in fichier in
     lire_fichier fd;
-
-(*
-  affiche_colonnes 0;
-  print_newline ();
-  affiche_colonnes_int 0;
-  print_newline ();
-  affiche_registres ();
-  print_newline ();
- 
-  deplace_seahaven (19) T;
-  affiche_colonnes 0;
-  print_newline ();
-  affiche_colonnes_int 0;
-  print_newline ();
-  affiche_registres ();
-  print_newline ();
-
-*)
-
- exit 0
+  exit 0
 
 let main () =
   Arg.parse
